@@ -1,0 +1,23 @@
+v 0.1
+
+d 'CROSSWALK': transforms variables using an external crosswalk csv
+d
+d KW: crosswalk
+d KW: encode
+d KW: rename
+d KW: translate
+d
+d Requires: Stata version 13
+d
+d Distribution-Date: 20200212
+d
+d Author:  Diana Goldemberg
+d Support: diana_goldemberg@g.harvard.edu
+d
+d License: MIT
+d Repo: https://github.com/dianagold/crosswalk
+
+f /crosswalk.ado
+f /crosswalk.sthlp
+
+e
