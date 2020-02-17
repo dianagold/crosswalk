@@ -8,7 +8,9 @@ This program maps raw/original values to clean/target labeled values
 capture program drop crosswalk
 program define crosswalk, nclass
 
-  syntax using/, [keeping(varlist) keeping_all]
+  syntax using/, [default] [from(string) to(string) to_type(string)]  ///
+    [from_value(string) to_value(string) to_labelvar(string) to_labelvalues(string)] ///
+    [keeping(varlist) keepall]
 
   version 13
   local syntax_error 2222
@@ -17,16 +19,41 @@ program define crosswalk, nclass
   noi display as text "applying to dataset in memory the crosswalk `using'..."
 
   /*----------------------------------------------------------------------------
+  0. Check specified options
   1. Store the original_varlist as a local and preserve the original dataset
   2. Import and check the crosswalk csv for consistency
   3. Write a temporary crosswalk do-file that does variable transformations
   4. Restores the original dataset and executes the temporary crosswalk do-file
   *---------------------------------------------------------------------------*/
 
+  *----------------------------------------------------------------------------*
+  * 0. Check specified options
+  *----------------------------------------------------------------------------*
   * Options -keeping- and -keeping_all- should not be combined
-  if "`keeping_all'" != "" & "`keeping_all'" != "" {
-    noi display as error `"options {it:keeping(varlist)} and {it:keeping_all} may not be combined"'
+  if "`keepall'" != "" & "`keeping'" != "" {
+    noi display as error `"options {it:keeping(varlist)} and {it:keepall} may not be combined"'
     exit `syntax_error'
+  }
+
+  * Default options presumes that the column names in the rosswalk csv file will
+  * follow the expected standardized names. Otherwise, column names must be provided
+  local mandatory_options "from to to_type"
+  local column_options "from from_value to to_type to_value to_labelvar to_labelvalues"
+  if "`default'" == "" {
+    foreach column of local mandatory_options {
+      if "``column''" != "" {
+        noi display as error `"unless option {it:default} is used, options {it:`mandatory_options'} must be specified"'
+        exit `syntax_error'
+      }
+    }
+  }
+  else {
+    foreach column of local column_options {
+      if "``column''" != "" {
+        noi display as error `"option {it:default} cannot be combined with column names options and you specified {it:`column'(``column'')}"'
+        exit `syntax_error'
+      }
+    }
   }
 
   *----------------------------------------------------------------------------*
@@ -270,6 +297,7 @@ program define crosswalk, nclass
 
   * Keep only specified original variables and the new ones
   if "`keeping'" == "" local varlist_to_keep "`target_varlist'"
+  if "`keepall'" != "" local varlist_to_keep : list original_varlist | target_varlist
   else  local varlist_to_keep : list keeping | target_varlist
   * Stripe the quotes out so that the list can be used in the do-file
   local varlist_to_keep : list clean varlist_to_keep
