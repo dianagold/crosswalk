@@ -17,7 +17,13 @@ d
 d License: MIT
 d Repo: https://github.com/dianagold/crosswalk
 
+* Ado files
 f /crosswalk.ado
+
+* Help files
 f /crosswalk.sthlp
+
+* Ancillary files
+f /crosswalk_auto.csv
 
 e
