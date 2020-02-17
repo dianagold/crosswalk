@@ -8,7 +8,7 @@ This program maps raw/original values to clean/target labeled values
 capture program drop crosswalk
 program define crosswalk, nclass
 
-  syntax using/, [keeping(varlist)]
+  syntax using/, [keeping(varlist) keeping_all]
 
   version 13
   local syntax_error 2222
@@ -22,6 +22,12 @@ program define crosswalk, nclass
   3. Write a temporary crosswalk do-file that does variable transformations
   4. Restores the original dataset and executes the temporary crosswalk do-file
   *---------------------------------------------------------------------------*/
+
+  * Options -keeping- and -keeping_all- should not be combined
+  if "`keeping_all'" != "" & "`keeping_all'" != "" {
+    noi display as error `"options {it:keeping(varlist)} and {it:keeping_all} may not be combined"'
+    exit `syntax_error'
+  }
 
   *----------------------------------------------------------------------------*
   * 1. Store the original_varlist as a local and preserve the original dataset
