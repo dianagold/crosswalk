@@ -1,14 +1,26 @@
 * Example based on the auto dataset
-sysuse auto, clear
 
 * The file location should reflect your repository clone
-local clone "C:/Users/`c(username)'/Documents/Github/crosswalk"
-local crosswalk_auto_csv "`clone'/src/crosswalk_auto.csv"
+global clone "C:/Users/`c(username)'/Documents/Github/crosswalk/src"
 
 * Load most recent version of the ado from clone
-quietly do "`clone'/src/crosswalk.ado"
+quietly do "${clone}/crosswalk.ado"
 
 * Usage example
+sysuse auto, clear
 codebook, compact
-crosswalk using "`crosswalk_auto_csv'", keeping("make price mpg")
+
+sysuse auto, clear
+crosswalk using "${clone}/crosswalk_auto.csv", keeping("make price mpg") to_var(varname_target) from_var(varname_original) to_type(vartype_target) to_value(value_target) from_value(value_original) to_labelvar(varlabel_target) to_labelvalues(valuelabel_target)
 codebook, compact
+
+sysuse auto, clear
+crosswalk using "${clone}/crosswalk_auto.csv", keeping("make price mpg") to_var(varname_target) from_var(varname_original) to_type(vartype_target) to_value(value_target) from_value(value_original)
+codebook, compact
+
+sysuse auto, clear
+crosswalk using "${clone}/crosswalk_auto.csv", keeping("make price mpg") to_var(varname_target) from_var(varname_original) to_type(vartype_target) 
+codebook, compact
+
+
+crosswalk using "${clone}/crosswalk_auto.csv", default keeping("make price mpg")

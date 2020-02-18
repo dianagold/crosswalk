@@ -4,7 +4,8 @@ domestic_rec,Car is domestic (recoded),1,Domestic,numeric,foreign,0
 domestic_mis,Car is domestic (missing),1,,numeric,foreign,0
 foreign_str,Car is foreign (str),Foreign,,string,foreign,1
 foreign_str,Car is foreign (str),Domestic,,string,foreign,0
-mustang,Is a Ford Mustang,1,Ford Mustang,numeric,make,Ford Mustang
+mustang_a,Is a Ford Mustang (miss),1,Ford Mustang,numeric,make,Ford Mustang
+mustang_b,Is a Ford Mustang (no miss),,,numeric,"(make == ""Ford Mustang"")",
 weight_lb,Weight in lb,,,numeric,weight,
 length_in,Length in in,,,numeric,length,
 repair,Repair count,1,Few,numeric,rep78,1
