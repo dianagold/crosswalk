@@ -1,23 +1,23 @@
 ﻿varname_target,varlabel_target,value_target,valuelabel_target,vartype_target,varname_original,value_original
-domestic_rec,Car is domestic (recoded),0,Foreign,numeric,foreign,1
-domestic_rec,Car is domestic (recoded),1,Domestic,numeric,foreign,0
-domestic_mis,Car is domestic (missing),1,,numeric,foreign,0
-foreign_str,Car is foreign (str),Foreign,,string,foreign,1
-foreign_str,Car is foreign (str),Domestic,,string,foreign,0
-mustang_a,Is a Ford Mustang (miss),1,Ford Mustang,numeric,make,Ford Mustang
-mustang_b,Is a Ford Mustang (no miss),,,numeric,"(make == ""Ford Mustang"")",
-weight_lb,Weight in lb,,,numeric,weight,
-length_in,Length in in,,,numeric,length,
-repair,Repair count,1,Few,numeric,rep78,1
-repair,Repair count,1,Few,numeric,rep78,2
-repair,Repair count,2,Some,numeric,rep78,3
-repair,Repair count,3,Many,numeric,rep78,4
-repair,Repair count,3,Many,numeric,rep78,5
-favorite,Is one of my favorite cars,1,,numeric,make,Ford Fiesta
-favorite,Is one of my favorite cars,1,,numeric,make,Toyota Corolla
-favorite,Is one of my favorite cars,1,,numeric,make,Volvo 260
-weight_kg,Weight in kg,,,numeric,(0.453592 * weight),
-length_cm,Length in cm,,,numeric,(0.393701 * length),
-l_plus_w,Whatever (length + weight),,,numeric,(length + weight),
-consumption_low,Consumption is low,,,numeric,(mpg <= 30),
-consumption_high,Consumption is high,,,numeric,(mpg > 30 & mpg < 9999),
+domestic_rec,Car is domestic (recode),0,Foreign,numeric,foreign,1
+domestic_rec,Car is domestic (recode),1,Domestic,numeric,foreign,0
+domestic_miss,Car is domestic (incomplete recode),1,,numeric,foreign,0
+foreign_str,Car is foreign (recode to string),Foreign,,string,foreign,1
+foreign_str,Car is foreign (recode to string),Domestic,,string,foreign,0
+mustang_recode,Is a Ford Mustang (recode from string),1,Ford Mustang,numeric,make,Ford Mustang
+mustang_expression,Is a Ford Mustang (expression),,,numeric,"(make == ""Ford Mustang"")",
+weight_lb,Weight in lb (rename),,,numeric,weight,
+length_in,Length in in (rename),,,numeric,length,
+repair,Repair count (recode),1,Few,numeric,rep78,1
+repair,Repair count (recode),1,Few,numeric,rep78,2
+repair,Repair count (recode),2,Some,numeric,rep78,3
+repair,Repair count (recode),3,Many,numeric,rep78,4
+repair,Repair count (recode),3,Many,numeric,rep78,5
+favorite,Is one of my favorite cars (recode from string),1,,numeric,make,Ford Fiesta
+favorite,Is one of my favorite cars (recode from string),1,,numeric,make,Toyota Corolla
+favorite,Is one of my favorite cars (recode from string),1,,numeric,make,Volvo 260
+weight_kg,Weight in kg (expression),,,numeric,(0.453592 * weight),
+length_cm,Length in cm (expression),,,numeric,(0.393701 * length),
+l_plus_w,Length plus weight (expression),,,numeric,(length + weight),
+consumption_low,Consumption is low (expression),,,numeric,(mpg <= 30),
+consumption_high,Consumption is high (expression),,,numeric,(mpg > 30 & mpg < 9999),

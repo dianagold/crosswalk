@@ -120,6 +120,9 @@ program define crosswalk, nclass
   }
 
   * The optional variable groups are checked, but only generate warnings, no exit
+  * Locals with the prefix HAS (has_recoding, has_varlabel, has_valuelabel) are
+  * in relationship to the WHOLE crosswalk file. They will later be conditionally
+  * checked for each to_variable individually (prefix THIS)
 
   * Column pair that allow for recoding of values
   capture confirm variable `optional_recoding', exact
@@ -198,6 +201,35 @@ program define crosswalk, nclass
       exit `syntax_error'
     }
 
+    * Boolean for whether THIS target variable has recoding
+    if `has_recoding' == 1 {
+      quietly tab to_value if to_var == "`varname'"
+      if `r(r)' == 0 local this_recoding = 0
+      else {
+        quietly tab from_value if to_var == "`varname'"
+        if `r(r)' == 0 local this_recoding = 0
+        else local this_recoding = 1
+      }
+    }
+    else local this_recoding = 0
+
+    * Boolean for whether a valuelabel should be created for THIS target variable
+    if `has_valuelabel' == 1 {
+      quietly tab to_labelvalues if to_var == "`varname'"
+      if `r(r)' == 0 local this_valuelabel = 0
+      else           local this_valuelabel = 1
+    }
+    else local this_valuelabel = 0
+
+    * Boolean for whether THIS variable should be labeled
+    if `has_varlabel' == 1 {
+      quietly tab to_labelvar if to_var == "`varname'"
+      if `r(r)' == 0 local this_varlabel = 0
+      else           local this_varlabel = 1
+    }
+    else local this_varlabel = 0
+
+
     * Ensures this variable is of a single type
     quietly tab to_type if to_var == "`varname'"
     cap assert `r(r)' == 1
@@ -214,71 +246,60 @@ program define crosswalk, nclass
     }
 
     * Operations that may be performed:
-    * - Single Line:
+    *   - recoding of existing variable(s), single/multiple lines
     *   - rename + [destring/tostring] of existing variable
     *   - simple expression in parenthesis, like (mpg*30) or (mpg*mpg)
-    * - Multiple Lines:
-    *   - recoding of existing variable(s)
 
     * If it is multiple lines it is surely a recoding, so 2 conditions are checked
-    if `Lmin'!=`Lmax' {
-      * 1. the crosswalk file must have recoding columns (has_recoding)
-      if `has_recoding' == 0 {
-        noi display as error `"cannot create variable `varname': it is a recoding over multiple lines, but recoding columns were not provided"'
+    if (`this_recoding' == 1) | (`Lmin'!=`Lmax') {
+      if `this_recoding' == 0 {
+        noi display as error `"cannot create variable `varname': it is a recoding based on multiple lines but {it:to_values from_values} were not declared"'
         exit `syntax_error'
       }
-      * 2. the original from_var must exist (may be different in every line)
+      * The original from_var must exist (may be different in every line)
       forvalues line=`Lmin'(1)`Lmax' {
         local v_original_thisline "`=from_var[`line']'"
         local v_original_exists : list v_original_thisline in original_varlist
         if `v_original_exists' == 0 {
-          noi display as error `"cannot create variable `varname': it is a recoding over multiple lines, based on {it:`v_original_thisline'}, not found in the original dataset"'
+          noi display as error `"cannot create variable `varname': it is a recoding based on {it:`v_original_thisline'}, not found in the original dataset"'
           exit `syntax_error'
         }
       }
-      local this_varname = "recoding"
+      local this_varname_operation = "recoding"
     }
 
-    * If it is a single line, it can be a rename/tostring/destring or expression
+    * Otherwise it will surely be a single line, without recoding values
+    * which can be a rename/tostring/destring or expression
     else {
-      local v_original_thisline "`=from_var[`Lmin']'"
-      local v_original_exists : list v_original_thisline in original_varlist
-      * Based on existing original_variable means it is a rename/tostring/destring
+
+      * Auxiliary locals to figure out which case we are in
+      local v_original "`=from_var[`Lmin']'"
+      local v_original_exists : list v_original in original_varlist
+
+      * When based on existing original_variable it is a rename/tostring/destring
       if `v_original_exists' == 1 {
-        local this_varname = "renaming"
+        if "``v_original'_type'" == "string" local from_string = 1
+        else                                 local from_string = 0
+        local this_varname_operation = "renaming"
       }
 
-      * Not an existing original_variable means it is an expression
+      * When not an existing original_variable means it is an expression
       else {
         * To be valid, the expression should start/end with ( & )
-        if substr(`"`v_original_thisline'"', 1, 1) != "(" | substr(`"`v_original_thisline'"', -1, 1) != ")" {
-          noi display as error `"cannot create variable `varname': it makes reference to `v_original_thisline' which should be either an existing variable or (expression of existing variables)"'
+        if substr(`"`v_original'"', 1, 1) != "(" | substr(`"`v_original'"', -1, 1) != ")" {
+          noi display as error `"cannot create variable `varname': it makes reference to `v_original' which should be either an existing variable or (expression of existing variables)"'
           exit `syntax_error'
         }
         * And be numeric without value (it will become a dummy)
         if `to_string' == 1 {
-        * ATTENTION!!!! WHAT IF THIS COLUMN IS NUMERIC???
-          noi display as error `"cannot create target variable `varname': it must be of to_type numeric, as it will become a dummy based on the expression `v_original_thisline'"'
+          noi display as error `"cannot create target variable `varname': it must be of to_type numeric, as it will become a dummy based on the expression `v_original'"'
           exit `syntax_error'
         }
-        if `has_recoding' == 1 {
-          if "`=to_value[`line']'" != "" {
-            noi display as error `"cannot create target variable `varname': no to_value should be specified for it, as it will become a dummy based on the expression `v_original_thisline'"'
-            exit `syntax_error'
-          }
-        }
-        local this_varname = "expression"
+        local this_varname_operation = "expression"
       }
 
     }
-
-    * Check if a valuelabel should be created for this new variable
-    if `has_valuelabel' == 1 {
-      quietly tab to_labelvalues if to_var == "`varname'"
-      if `r(r)' == 0 local to_valuelabel = 0
-      else           local to_valuelabel = 1
-    }
-    else local to_valuelabel = 0
+    * By now we know exactly what operation is performed in THIS_varname
 
 
     *------------------------------------------------------
@@ -288,68 +309,79 @@ program define crosswalk, nclass
     * DDI marker open
     `fw' `"*<_`varname'_>"' _n
 
-    * Generate empty variable
-    if `to_string'   `fw' `"generate `varname' = "" "' _n
-    else             `fw' `"generate `varname' = .  "' _n
+    * Renaming operations can be clone / tostring / destring
+    if "`this_varname_operation'" == "renaming" {
+      * Creates the to_variable with the correct process
+      if      `to_string' == 1 & `from_string' == 0  `fw' `"tostring `v_original', gen(`varname')"' _n
+      else if `to_string' == 0 & `from_string' == 1  `fw' `"destring `v_original', gen(`varname')"' _n
+      else                                           `fw' `"clonevar `varname' = `v_original'"' _n
+    }
 
-    * Generate empty label
-    if `to_valuelabel'  `fw' `"label define `varname', replace"' _n
+    * If v_original is an expression enclosed in parenthesis,just generate itc
+    else if "`this_varname_operation'" == "expression" {
+      `fw' `"generate `varname' = `v_original'"' _n
+    }
 
-    * For each line of instruction
-    forvalues line=`Lmin'(1)`Lmax' {
+    * If we are performing a recoding, this may involves many lines
+    else if "`this_varname_operation'" == "recoding" {
 
+      * Generate empty variable
+      if `to_string'   `fw' `"generate `varname' = "" "' _n
+      else             `fw' `"generate `varname' = .  "' _n
 
-      * ATTENTION!!!! WHAT IF THIS COLUMN IS NUMERIC???
+      * For each line of instruction
+      forvalues line=`Lmin'(1)`Lmax' {
 
-      * If there is no to_value, it should just replace for from_var
-      if `has_recoding' == 0 `fw' `"replace `varname' = `=from_var[`line']' "' _n
-      else {
-        if "`=to_value[`line']'" == "" `fw' `"replace `varname' = `=from_var[`line']' "' _n
+        * First step is to replace variable with the to_value
+        if `to_string'   `fw' `"replace `varname' = "`=to_value[`line']'" "'
+        else             `fw' `"replace `varname' =  `=to_value[`line']'  "'
 
-        * If there is some to_value, writes the line in two steps
+        * If there is no values correspondence (at all or for this variable), ends the line
+        if `has_recoding' == 0                  `fw' `" "' _n
+        else if "`=from_value[`line']'" == ""   `fw' `" "' _n
+
+        * If there is some from_value to recode from, continues the line as an if condition
         else {
-          * First step is to replace variable with the to_value
-          if `to_string'   `fw' `"replace `varname' = "`=to_value[`line']'" "'
-          else             `fw' `"replace `varname' =  `=to_value[`line']'  "'
 
-          * If there is no values correspondence (at all or for this variable), ends the line
-          if `has_recoding' == 0                  `fw' `" "' _n
-          else if "`=from_value[`line']'" == ""   `fw' `" "' _n
-
-          * If there is some from_value to recode from, continues the line as an if condition
+          * But before the if, needs a boolean for original variable being a string/numeric
+          if      "``=from_var[`line']'_type'" == "string"  local from_string = 1
+          else if "``=from_var[`line']'_type'" == "numeric" local from_string = 0
           else {
-
-            * But before the if, needs a boolean for original variable being a string/numeric
-            if      "``=from_var[`line']'_type'" == "string"  local from_string = 1
-            else if "``=from_var[`line']'_type'" == "numeric" local from_string = 0
-            else {
-              noi display as error `"Programming error (not clear the vartype of `=from_var[`line']')"'
-              exit `syntax_error'
-            }
-
-            * Finish that replace line using or not using quotes
-            if `from_string'   `fw' `" if `=from_var[`line']' == "`=from_value[`line']'" "' _n
-            else               `fw' `" if `=from_var[`line']' ==  `=from_value[`line']'  "' _n
+            noi display as error `"Programming error (not clear the vartype of `=from_var[`line']')"'
+            exit `syntax_error'
           }
-        }
 
-        if `to_valuelabel' {
-          if "`=to_labelvalues[`line']'" != "" ///
-          `fw' `"label define `varname' `=to_value[`line']' "`=to_labelvalues[`line']'", modify"' _n
+          * Finish that replace line using or not using quotes
+          if `from_string'   `fw' `" if `=from_var[`line']' == "`=from_value[`line']'" "' _n
+          else               `fw' `" if `=from_var[`line']' ==  `=from_value[`line']'  "' _n
+
         }
       }
     }
 
-    * Apply label to variable
-    if `to_valuelabel'  `fw' `"label values `varname' `varname'"' _n
+
+    * Apply value labels to new variable
+    if `this_valuelabel' {
+      * Generate empty label
+      `fw' `"label define `varname', replace"' _n
+      * Create labels for each line (perhaps a single one)
+      forvalues line=`Lmin'(1)`Lmax' {
+        if "`=to_labelvalues[`line']'" != "" ///
+        `fw' `"label define `varname' `=to_value[`line']' "`=to_labelvalues[`line']'", modify"' _n
+      }
+      * Apply this label to newly create variable
+      `fw' `"label values `varname' `varname'"' _n
+    }
 
     * Label new variable
-    if `has_varlabel' {
+    if `this_varlabel' {
       `fw' `"label var `varname' "`=to_labelvar[`Lmin']'" "' _n
     }
+
     * DDI marker close
     `fw' `"*</_`varname'_>"' _n _n
 
+  * Next to_var (target variable being created)
   }
 
   *------------------------------------------------
