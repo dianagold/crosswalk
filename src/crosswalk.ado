@@ -1,4 +1,4 @@
-*! version 0.1  12feb2020  Diana Goldemberg, diana_goldemberg@g.harvard.edu
+*! version 0.2  20feb2020  Diana Goldemberg, diana_goldemberg@g.harvard.edu
 
 /*------------------------------------------------------------------------------
 This program maps raw/original values to clean/target labeled values
@@ -8,15 +8,19 @@ This program maps raw/original values to clean/target labeled values
 capture program drop crosswalk
 program define crosswalk, nclass
 
-  syntax using/, [keeping(varlist)]
+  syntax using/, [default] [from_var(string) to_var(string) to_type(string)]  ///
+    [from_value(string) to_value(string) to_labelvar(string) to_labelvalues(string)] ///
+    [keeping(varlist) keepall]
 
   version 13
+  * Define error code (pegar carona no expresso... 2222!)
   local syntax_error 2222
 
   * Display process comment
   noi display as text "applying to dataset in memory the crosswalk `using'..."
 
   /*----------------------------------------------------------------------------
+  0. Check specified options
   1. Store the original_varlist as a local and preserve the original dataset
   2. Import and check the crosswalk csv for consistency
   3. Write a temporary crosswalk do-file that does variable transformations
@@ -24,10 +28,45 @@ program define crosswalk, nclass
   *---------------------------------------------------------------------------*/
 
   *----------------------------------------------------------------------------*
+  * 0. Check specified options
+  *----------------------------------------------------------------------------*
+  * Options -keeping- and -keeping_all- should not be combined
+  if "`keepall'" != "" & "`keeping'" != "" {
+    noi display as error `"options {it:keeping(varlist)} and {it:keepall} may not be combined"'
+    exit `syntax_error'
+  }
+
+  * Column names that are expected in a 'default' crosswalk.csv in the 1st row
+  local mandatory_columns "from_var to_var to_type"
+  local all_columns "from_var from_value to_var to_type to_value to_labelvar to_labelvalues"
+
+  * Default options presumes that the column names in the rosswalk csv file will
+  * follow the expected standardized names. Otherwise, column names must be provided
+  * at the minimum for the mandatory columns
+  if "`default'" == "" {
+    foreach column of local mandatory_columns {
+      if "``column''" == "" {
+        noi display as error `"unless option {it:default} is used, options {it:`mandatory_columns'} must be specified"'
+        exit `syntax_error'
+      }
+    }
+  }
+
+  * If default is in use, should not specify ANY columns (so default is always default to all columns)
+  else {
+    foreach column of local all_columns {
+      if "``column''" != "" {
+        noi display as error `"option {it:default} cannot be combined with column names options and you specified {it:`column'(``column'')}"'
+        exit `syntax_error'
+      }
+    }
+  }
+
+  *----------------------------------------------------------------------------*
   * 1. Store the original_varlist as a local and preserve the original dataset
   *----------------------------------------------------------------------------*
   * Store the original variables in rawdata and their type as locals so that
-  * a destring can be performed as needed (when the vartype_target is numeric)
+  * a destring can be performed as needed (when the to_type is numeric)
   quietly ds
   local original_varlist "`r(varlist)'"
   foreach v of varlist `original_varlist' {
@@ -48,6 +87,7 @@ program define crosswalk, nclass
   *----------------------------------------------------------------------------*
   * Must be able to locate the crosswalk file
   confirm file `"`using'"'
+
   * Check that extension is indeed a csv
   mata : st_local("extension", pathsuffix(`"`using'"'))
   if `"`extension'"' != ".csv" {
@@ -59,56 +99,73 @@ program define crosswalk, nclass
   quietly import delimited `"`using'"', varnames(1) encoding("utf-8") clear
 
   * Expected variables in the csv file
-  local mandatory "varname_original varname_target vartype_target"
-  local optional_recoding "value_original value_target"
-  local optional_label_var "varlabel_target"
-  local optional_label_value "valuelabel_target"
+  local mandatory   "from_var to_var to_type"
+  local optional_recoding    "to_value from_value"
+  local optional_label_var   "to_labelvar"
+  local optional_label_value "to_labelvalues"
+
+  * Unless the default option is activated, each varname passed in the options is renamed to default
+  if "`default'" == "" {
+    foreach option of local all_columns {
+      cap rename ``option'' `option'
+    }
+  }
+
   * Without the mandatory variables in the crosswalk csv, will exit
   capture confirm variable `mandatory', exact
   if _rc {
-    noi display as error "The crosswalk csv must contain the following column names in the first row: `mandatory'."
+    if "`default'" == "" noi display as error "the crosswalk csv must contain the columns: `from_var' `to_var' `to_type'."
+    else noi display as error "since {it:default} is on, the crosswalk csv must contain the columns: `mandatory'."
     exit `syntax_error'
   }
+
   * The optional variable groups are checked, but only generate warnings, no exit
+  * Locals with the prefix HAS (has_recoding, has_varlabel, has_valuelabel) are
+  * in relationship to the WHOLE crosswalk file. They will later be conditionally
+  * checked for each to_variable individually (prefix THIS)
+
+  * Column pair that allow for recoding of values
   capture confirm variable `optional_recoding', exact
   if _rc {
-    noi display as error "WARNING! The columns for recoding (`optional_recoding') were not found in the csv. Will proceed only with renaming/simple expression transformations."
+    noi display as error "the columns for recoding values were not found in the csv: will proceed only renaming/simple expressions"
     local has_recoding = 0
   }
   else local has_recoding = 1
+
+  * Column that allows for labeling variables
   capture confirm variable `optional_label_var', exact
   if _rc {
-    noi display as error "WARNING! The column `optional_label_var' was not found in the csv. Will proceed creating variables without variable labels."
+    noi display as error "the column for labeling new variables was not found in the csv: will proceed without variable labels"
     local has_varlabel = 0
   }
   else local has_varlabel = 1
+
+  * Column that allows for creating value labels
   capture confirm variable `optional_label_value', exact
   if _rc {
-    noi display as error "WARNING! The column `optional_label_value' was not found in the csv. Will proceed creating variables without assigning value labels."
+    noi display as error "the column for creating value labels was not found in the csv: will proceed without assigning value labels"
     local has_valuelabel = 0
   }
   else local has_valuelabel = 1
 
-  * Organize the crosswalk file
-  sort varname_target
-  gen linenum = _n
-
-  * Options must be valid
-  cap assert inlist(vartype_target, "numeric", "string")
+  * Type options must be valid
+  cap assert inlist(to_type, "numeric", "string")
   if _rc {
-    noi display as error "The crosswalk csv has invalid vartypes_target. Valid vartypes_target: numeric, string."
+    noi display as error "the crosswalk csv has invalid to_type (only numeric or string accepted)"
     exit `syntax_error'
   }
 
   /* PLACEHOLDER: more errors to check
-  - value_target is defined iff value_original is defined
-  - !missing(varname_target) iff !missing(varname_original)
+  - to_value is defined iff from_value is defined
+  - !missing(to_var) iff !missing(from_var)
   */
-
 
   *----------------------------------------------------------------------------*
   * 3. Write a temporary crosswalk do-file that does variable transformations
   *----------------------------------------------------------------------------*
+  * Sort the crosswalk file consistenly, because the line numbers will be used
+  sort to_var
+  gen linenum = _n
 
   * Start temporary do-file
   tempname crosswalk_do
@@ -124,28 +181,57 @@ program define crosswalk, nclass
   `fw' "*===========================================*" _n _n
 
   * Processing all variables
-  quietly levelsof varname_target, local(target_varlist)
+  quietly levelsof to_var, local(target_varlist)
   foreach varname of local target_varlist {
 
     *------------------------------------------------
     * 3.1. Prepare to process this variable `varname'
     *------------------------------------------------
 
-    * Return the lines between which the variable is matched: L1 L2
-    quietly sum linenum if varname_target == "`varname'"
+    * Return the lines between which the variable is matched: Lmin Lmax
+    quietly sum linenum if to_var == "`varname'"
     local Lmin = `r(min)'
     local Lmax = `r(max)'
 
     * Boolean for this target variable being a string/numeric as per first line
-    if      "`=vartype_target[`Lmin']'" == "string"  local to_string = 1
-    else if "`=vartype_target[`Lmin']'" == "numeric" local to_string = 0
+    if      "`=to_type[`Lmin']'" == "string"  local to_string = 1
+    else if "`=to_type[`Lmin']'" == "numeric" local to_string = 0
     else {
       noi display as error `"variable `varname' must be either string OR numeric"'
       exit `syntax_error'
     }
 
+    * Boolean for whether THIS target variable has recoding
+    if `has_recoding' == 1 {
+      quietly tab to_value if to_var == "`varname'"
+      if `r(r)' == 0 local this_recoding = 0
+      else {
+        quietly tab from_value if to_var == "`varname'"
+        if `r(r)' == 0 local this_recoding = 0
+        else local this_recoding = 1
+      }
+    }
+    else local this_recoding = 0
+
+    * Boolean for whether a valuelabel should be created for THIS target variable
+    if `has_valuelabel' == 1 {
+      quietly tab to_labelvalues if to_var == "`varname'"
+      if `r(r)' == 0 local this_valuelabel = 0
+      else           local this_valuelabel = 1
+    }
+    else local this_valuelabel = 0
+
+    * Boolean for whether THIS variable should be labeled
+    if `has_varlabel' == 1 {
+      quietly tab to_labelvar if to_var == "`varname'"
+      if `r(r)' == 0 local this_varlabel = 0
+      else           local this_varlabel = 1
+    }
+    else local this_varlabel = 0
+
+
     * Ensures this variable is of a single type
-    quietly tab vartype_target if varname_target == "`varname'"
+    quietly tab to_type if to_var == "`varname'"
     cap assert `r(r)' == 1
     if _rc {
       noi display as error `"variable `varname' cannot be both string AND numeric"'
@@ -155,45 +241,66 @@ program define crosswalk, nclass
     * Ensures that the variable name is not yet taken by an original variable
     local varname_is_taken : list varname in original_varlist
     if `varname_is_taken' {
-      noi display as error `"cannot create target variable `varname': varname already taken in original dataset"'
+      noi display as error `"cannot create variable `varname': varname already taken in original dataset"'
       exit `syntax_error'
     }
 
-    * Varname_original must either be an existing variable, or a valid expression (numeric, single line, dummy)
-    forvalues line=`Lmin'(1)`Lmax' {
-      local v_original_thisline "`=varname_original[`line']'"
-      local v_original_exists : list v_original_thisline in original_varlist
-      * Not an existing original_variable means a candidate expression
-      if `v_original_exists' == 0 {
-        * To be valid, the expression should start/end with ( & )
-        if substr("`v_original_thisline'", 1, 1) != "(" | substr("`v_original_thisline'", -1, 1) != ")" {
-          noi display as error `"cannot create target variable `varname': it makes reference to `v_original_thisline' which should be either an existing variable or (expression of existing variables)"'
-          exit `syntax_error'
-        }
-        * It should also be single lined
-        if `Lmin'!=`Lmax' {
-          noi display as error `"cannot create target variable `varname': it must be given in a single line because it contains an expression on existing variables `v_original_thisline'"'
-          exit `syntax_error'
-        }
-        * And be numeric without value (it will become a dummy)
-        if `to_string' | "`=value_target[`line']'" != "" {
-        * ATTENTION!!!! WHAT IF THIS COLUMN IS NUMERIC???
-          noi display as error `"cannot create target variable `varname': it must be of vartype_target numeric and no value_target should be specified for it, as it will become a dummy based on the expression `v_original_thisline'"'
+    * Operations that may be performed:
+    *   - recoding of existing variable(s), single/multiple lines
+    *   - rename + [destring/tostring] of existing variable
+    *   - simple expression in parenthesis, like (mpg*30) or (mpg*mpg)
+
+    * If it is multiple lines it is surely a recoding, so 2 conditions are checked
+    if (`this_recoding' == 1) | (`Lmin'!=`Lmax') {
+      if `this_recoding' == 0 {
+        noi display as error `"cannot create variable `varname': it is a recoding based on multiple lines but {it:to_values from_values} were not declared"'
+        exit `syntax_error'
+      }
+      * The original from_var must exist (may be different in every line)
+      forvalues line=`Lmin'(1)`Lmax' {
+        local v_original_thisline "`=from_var[`line']'"
+        local v_original_exists : list v_original_thisline in original_varlist
+        if `v_original_exists' == 0 {
+          noi display as error `"cannot create variable `varname': it is a recoding based on {it:`v_original_thisline'}, not found in the original dataset"'
           exit `syntax_error'
         }
       }
+      local this_varname_operation = "recoding"
     }
 
-    * Check if a valuelabel should be created for this new variable
-    if `has_valuelabel' == 1 {
-      quietly tab valuelabel_target if varname_target == "`varname'"
-      if `r(r)' == 0 local to_valuelabel = 0
-      else           local to_valuelabel = 1
-    }
-    else local to_valuelabel = 0
+    * Otherwise it will surely be a single line, without recoding values
+    * which can be a rename/tostring/destring or expression
+    else {
 
-    //* Progress tracker
-    //display as text "Processing `varname'"
+      * Auxiliary locals to figure out which case we are in
+      local v_original "`=from_var[`Lmin']'"
+      local v_original_exists : list v_original in original_varlist
+
+      * When based on existing original_variable it is a rename/tostring/destring
+      if `v_original_exists' == 1 {
+        if "``v_original'_type'" == "string" local from_string = 1
+        else                                 local from_string = 0
+        local this_varname_operation = "renaming"
+      }
+
+      * When not an existing original_variable means it is an expression
+      else {
+        * To be valid, the expression should start/end with ( & )
+        if substr(`"`v_original'"', 1, 1) != "(" | substr(`"`v_original'"', -1, 1) != ")" {
+          noi display as error `"cannot create variable `varname': it makes reference to `v_original' which should be either an existing variable or (expression of existing variables)"'
+          exit `syntax_error'
+        }
+        * And be numeric without value (it will become a dummy)
+        if `to_string' == 1 {
+          noi display as error `"cannot create target variable `varname': it must be of to_type numeric, as it will become a dummy based on the expression `v_original'"'
+          exit `syntax_error'
+        }
+        local this_varname_operation = "expression"
+      }
+
+    }
+    * By now we know exactly what operation is performed in THIS_varname
+
 
     *------------------------------------------------------
     * 3.2. Write dofile section on this variable `varname'
@@ -202,60 +309,79 @@ program define crosswalk, nclass
     * DDI marker open
     `fw' `"*<_`varname'_>"' _n
 
-    * Generate empty variable
-    if `to_string'   `fw' `"generate `varname' = "" "' _n
-    else             `fw' `"generate `varname' = .  "' _n
+    * Renaming operations can be clone / tostring / destring
+    if "`this_varname_operation'" == "renaming" {
+      * Creates the to_variable with the correct process
+      if      `to_string' == 1 & `from_string' == 0  `fw' `"tostring `v_original', gen(`varname')"' _n
+      else if `to_string' == 0 & `from_string' == 1  `fw' `"destring `v_original', gen(`varname')"' _n
+      else                                           `fw' `"clonevar `varname' = `v_original'"' _n
+    }
 
-    * Generate empty label
-    if `to_valuelabel'  `fw' `"label define `varname', replace"' _n
+    * If v_original is an expression enclosed in parenthesis,just generate itc
+    else if "`this_varname_operation'" == "expression" {
+      `fw' `"generate `varname' = `v_original'"' _n
+    }
 
-    * For each line of instruction
-    forvalues line=`Lmin'(1)`Lmax' {
+    * If we are performing a recoding, this may involves many lines
+    else if "`this_varname_operation'" == "recoding" {
 
-      * If there is no value_target, it should just replace for varname_original
-      * ATTENTION!!!! WHAT IF THIS COLUMN IS NUMERIC???
-      if "`=value_target[`line']'" == ""  ///
-        `fw' `"replace `varname' = `=varname_original[`line']' "' _n
+      * Generate empty variable
+      if `to_string'   `fw' `"generate `varname' = "" "' _n
+      else             `fw' `"generate `varname' = .  "' _n
 
-      * If there is some value_target, writes the line in two steps
-      else {
-        * First step is to replace variable with the value_target
-        if `to_string'   `fw' `"replace `varname' = "`=value_target[`line']'" "'
-        else             `fw' `"replace `varname' =  `=value_target[`line']'  "'
+      * For each line of instruction
+      forvalues line=`Lmin'(1)`Lmax' {
+
+        * First step is to replace variable with the to_value
+        if `to_string'   `fw' `"replace `varname' = "`=to_value[`line']'" "'
+        else             `fw' `"replace `varname' =  `=to_value[`line']'  "'
 
         * If there is no values correspondence (at all or for this variable), ends the line
-        if `has_recoding' == 0                      `fw' `" "' _n
-        else if "`=value_original[`line']'" == ""   `fw' `" "' _n
+        if `has_recoding' == 0                  `fw' `" "' _n
+        else if "`=from_value[`line']'" == ""   `fw' `" "' _n
 
-        * If there is some value_original to recode from, continues the line as an if condition
+        * If there is some from_value to recode from, continues the line as an if condition
         else {
 
           * But before the if, needs a boolean for original variable being a string/numeric
-          if      "``=varname_original[`line']'_type'" == "string"  local from_string = 1
-          else if "``=varname_original[`line']'_type'" == "numeric" local from_string = 0
+          if      "``=from_var[`line']'_type'" == "string"  local from_string = 1
+          else if "``=from_var[`line']'_type'" == "numeric" local from_string = 0
           else {
-            noi display as error `"Programming error (not clear the vartype of `=varname_original[`line']')"'
+            noi display as error `"Programming error (not clear the vartype of `=from_var[`line']')"'
             exit `syntax_error'
           }
 
           * Finish that replace line using or not using quotes
-          if `from_string'   `fw' `" if `=varname_original[`line']' == "`=value_original[`line']'" "' _n
-          else               `fw' `" if `=varname_original[`line']' ==  `=value_original[`line']'  "' _n
-        }
+          if `from_string'   `fw' `" if `=from_var[`line']' == "`=from_value[`line']'" "' _n
+          else               `fw' `" if `=from_var[`line']' ==  `=from_value[`line']'  "' _n
 
-        if `to_valuelabel' & "`=valuelabel_target[`line']'" != "" ///
-          `fw' `"label define `varname' `=value_target[`line']' "`=valuelabel_target[`line']'", modify"' _n
+        }
       }
     }
 
-    * Apply label to variable
-    if `to_valuelabel'  `fw' `"label values `varname' `varname'"' _n
+
+    * Apply value labels to new variable
+    if `this_valuelabel' {
+      * Generate empty label
+      `fw' `"label define `varname', replace"' _n
+      * Create labels for each line (perhaps a single one)
+      forvalues line=`Lmin'(1)`Lmax' {
+        if "`=to_labelvalues[`line']'" != "" ///
+        `fw' `"label define `varname' `=to_value[`line']' "`=to_labelvalues[`line']'", modify"' _n
+      }
+      * Apply this label to newly create variable
+      `fw' `"label values `varname' `varname'"' _n
+    }
 
     * Label new variable
-    if `has_varlabel'  `fw' `"label var `varname' "`=varlabel_target[`Lmin']'" "' _n
+    if `this_varlabel' {
+      `fw' `"label var `varname' "`=to_labelvar[`Lmin']'" "' _n
+    }
+
     * DDI marker close
     `fw' `"*</_`varname'_>"' _n _n
 
+  * Next to_var (target variable being created)
   }
 
   *------------------------------------------------
@@ -264,6 +390,7 @@ program define crosswalk, nclass
 
   * Keep only specified original variables and the new ones
   if "`keeping'" == "" local varlist_to_keep "`target_varlist'"
+  if "`keepall'" != "" local varlist_to_keep : list original_varlist | target_varlist
   else  local varlist_to_keep : list keeping | target_varlist
   * Stripe the quotes out so that the list can be used in the do-file
   local varlist_to_keep : list clean varlist_to_keep
