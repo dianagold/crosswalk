@@ -1,0 +1,13 @@
+﻿vartype,varname_en,label_en,varname_fr,label_fr,varname_pt,label_pt
+string,make,Make and Model,,,modelo,Marca e Modelo
+numeric,price,Price,,,preco,Preço
+numeric,mpg,Mileage (mpg),,,consumo,Consumo (milhas por galão)
+numeric,rep78,Repair Record 1978,,,rr78,Registro de Reparos 1978
+numeric,headroom,Headroom (in.),,,espaco_interno,Espaço interno (in.)
+numeric,trunk,Trunk space (cu. ft.),,,portamalas,Espaço porta-malas (cu. ft.)
+numeric,weight,Weight (lbs.),,,peso,Peso (lbs.)
+numeric,length,Length (in.),,,comprimento,Comprimento (in.)
+numeric,turn,Turn Circle (ft.),,,,
+numeric,displacement,Displacement (cu. in.),,,,
+numeric,gear_ratio,Gear Ratio,,,engrenagem,Engrenagem
+numeric,foreign,Car type,,,importado,Tipo de carro
